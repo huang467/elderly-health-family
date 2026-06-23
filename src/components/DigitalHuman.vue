@@ -158,6 +158,7 @@ let proactiveInFlight = false
 let sustainedEmotion = 'neutral'
 let sustainedEmotionStartedAt = 0
 let sustainedEmotionTriggered = false
+let textEmotionHoldUntil = 0
 const expressionScores = reactive({
   neutral: 0,
   happy: 0,
@@ -199,6 +200,42 @@ const emotionMap = {
   fearful: '担心',
   disgusted: '不适'
 }
+
+const textEmotionHoldMs = 6000
+
+const emotionTextOptions = [
+  { value: 'neutral', label: 'Neutral', aliases: ['neutral', 'calm', 'normal', 'pingjing', 'putong', '\u5e73\u9759', '\u666e\u901a', '\u6b63\u5e38'] },
+  { value: 'happy', label: 'Happy', aliases: ['happy', 'smile', 'laugh', 'kaixin', 'gaoxing', 'kuaile', '\u5f00\u5fc3', '\u9ad8\u5174', '\u5feb\u4e50', '\u5fae\u7b11', '\u7b11'] },
+  { value: 'sad', label: 'Sad', aliases: ['sad', 'unhappy', 'nanguo', 'beishang', '\u96be\u8fc7', '\u4f24\u5fc3', '\u60b2\u4f24', '\u4e0d\u5f00\u5fc3'] },
+  { value: 'angry', label: 'Angry', aliases: ['angry', 'mad', 'shengqi', 'fennu', '\u751f\u6c14', '\u6124\u6012', '\u607c\u706b'] },
+  { value: 'surprised', label: 'Surprised', aliases: ['surprised', 'shock', 'jingya', 'chijing', '\u60ca\u8bb6', '\u9707\u60ca', '\u5403\u60ca'] },
+  { value: 'fearful', label: 'Fearful', aliases: ['fearful', 'afraid', 'scared', 'danxin', 'haipa', 'jinzhang', '\u62c5\u5fc3', '\u5bb3\u6015', '\u6050\u60e7', '\u7d27\u5f20'] },
+  { value: 'disgusted', label: 'Disgusted', aliases: ['disgusted', 'uncomfortable', 'bushi', 'nanshou', 'exin', '\u4e0d\u9002', '\u96be\u53d7', '\u6076\u5fc3', '\u4e0d\u8212\u670d'] }
+]
+
+const emotionTextLabels = emotionTextOptions.reduce((labels, item) => {
+  labels[item.value] = item.label
+  return labels
+}, {})
+
+const emotionCommandPrefixes = [
+  '/emotion',
+  '/face',
+  '/mood',
+  'emotion',
+  'face',
+  'mood',
+  'expression',
+  'biaoqing',
+  'qingxu',
+  'xinqing',
+  '\u8868\u60c5',
+  '\u60c5\u7eea',
+  '\u5fc3\u60c5',
+  '\u5207\u6362\u8868\u60c5',
+  '\u8bbe\u7f6e\u8868\u60c5',
+  '\u6570\u5b57\u4eba\u8868\u60c5'
+]
 
 const sensitiveEmotionWeight = {
   happy: 1.6,
@@ -285,6 +322,7 @@ const stopCamera = () => {
 }
 
 const detectExpression = async () => {
+  if (Date.now() < textEmotionHoldUntil) return
   if (!videoRef.value || speech.isSpeaking.value) return
 
   try {
@@ -300,6 +338,64 @@ const detectExpression = async () => {
   } catch (error) {
     // 表情检测失败不影响对话与任务能力。
   }
+}
+
+const resetProactiveEmotionState = () => {
+  sustainedEmotion = 'neutral'
+  sustainedEmotionStartedAt = 0
+  sustainedEmotionTriggered = false
+}
+
+const setEmotionFromText = (nextEmotion) => {
+  const isValidEmotion = emotionTextOptions.some(item => item.value === nextEmotion)
+  if (!isValidEmotion) return false
+
+  emotion.value = nextEmotion
+  emotionConfidence.value = 1
+  textEmotionHoldUntil = Date.now() + textEmotionHoldMs
+  Object.keys(expressionScores).forEach(key => {
+    expressionScores[key] = key === nextEmotion ? 1 : 0
+  })
+  resetProactiveEmotionState()
+  return true
+}
+
+const normalizeEmotionText = (text) => {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[=:\uff1a,\uff0c,，.!?\uff01\uff1f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+const parseExplicitEmotionCommand = (text) => {
+  const normalized = normalizeEmotionText(text)
+  const matchedPrefix = emotionCommandPrefixes.find(prefix =>
+    normalized === prefix || normalized.startsWith(`${prefix} `)
+  )
+
+  if (!matchedPrefix) return null
+  const commandBody = normalized.slice(matchedPrefix.length).trim()
+  if (!commandBody) return null
+
+  return findEmotionInText(commandBody)
+}
+
+const findEmotionInText = (text) => {
+  const normalized = normalizeEmotionText(text)
+  return emotionTextOptions.find(item =>
+    item.value === normalized || item.aliases.some(alias => normalized.includes(alias))
+  )?.value || null
+}
+
+const applyTextEmotionSignal = (text) => {
+  const explicitEmotion = parseExplicitEmotionCommand(text)
+  const inferredEmotion = explicitEmotion || findEmotionInText(text)
+  if (!inferredEmotion) return { matched: false, explicit: false }
+
+  setEmotionFromText(inferredEmotion)
+  return { matched: true, explicit: !!explicitEmotion, emotion: inferredEmotion }
 }
 
 const updateEmotion = (expressions) => {
@@ -384,6 +480,12 @@ const sendMessage = async () => {
 
   inputText.value = ''
   addMessage('user', text)
+
+  const textEmotionSignal = applyTextEmotionSignal(text)
+  if (textEmotionSignal.explicit) {
+    addAssistantReply(`Emotion set to ${emotionTextLabels[textEmotionSignal.emotion] || textEmotionSignal.emotion}.`)
+    return
+  }
 
   const scheduledTask = parseScheduleIntent(text)
   if (scheduledTask) {
