@@ -29,7 +29,7 @@
       <div class="camera-card">
         <video ref="videoRef" muted playsinline></video>
         <div class="camera-overlay">
-          表情: <strong>{{ emotionMap[emotion] || emotion }}</strong>
+          表情: <strong>{{ cameraStatusText }}</strong>
           <span>{{ Math.round(emotionConfidence * 100) }}%</span>
         </div>
         <div v-if="cameraError" class="camera-error">{{ cameraError }}</div>
@@ -145,6 +145,7 @@ const initialized = ref(false)
 const booting = ref(false)
 const thinking = ref(false)
 const cameraError = ref('')
+const cameraStatus = ref('waiting')
 const emotion = ref('neutral')
 const emotionConfidence = ref(0)
 const inputText = ref('')
@@ -250,6 +251,12 @@ const sensitiveEmotionWeight = {
 const apiReady = computed(() => apiConfig.apiKey.trim() && apiConfig.endpoint.trim() && apiConfig.model.trim())
 const activeTasks = computed(() => tasks.value.filter(task => !task.done))
 const runtimeStatus = computed(() => thinking.value ? '模型响应中' : speech.isListening.value ? '语音输入中' : '待命')
+const cameraStatusText = computed(() => {
+  if (cameraStatus.value === 'detecting') return emotionMap[emotion.value] || emotion.value
+  if (cameraStatus.value === 'no-face') return '未检测到人脸'
+  if (cameraStatus.value === 'error') return '检测失败'
+  return '等待识别'
+})
 const voiceStatusText = computed(() => {
   if (speech.voiceError.value) return speech.voiceError.value
   if (speech.isListening.value) return '正在听您说话，说完后会自动发送。'
@@ -285,6 +292,7 @@ const loadFaceModels = async () => {
   try {
     await Promise.all([
       faceapi.nets.tinyFaceDetector.loadFromUri('/models'),
+      faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
       faceapi.nets.faceExpressionNet.loadFromUri('/models')
     ])
   } catch (error) {
@@ -331,12 +339,17 @@ const detectExpression = async () => {
         inputSize: 320,
         scoreThreshold: 0.18
       }))
+      .withFaceLandmarks()
       .withFaceExpressions()
 
-    if (!result) return
+    if (!result) {
+      cameraStatus.value = 'no-face'
+      return
+    }
+    cameraStatus.value = 'detecting'
     updateEmotion(result.expressions)
   } catch (error) {
-    // 表情检测失败不影响对话与任务能力。
+    cameraStatus.value = 'error'
   }
 }
 
@@ -352,6 +365,7 @@ const setEmotionFromText = (nextEmotion) => {
 
   emotion.value = nextEmotion
   emotionConfidence.value = 1
+  cameraStatus.value = 'detecting'
   textEmotionHoldUntil = Date.now() + textEmotionHoldMs
   Object.keys(expressionScores).forEach(key => {
     expressionScores[key] = key === nextEmotion ? 1 : 0
