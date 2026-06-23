@@ -708,13 +708,17 @@ const generateExportContent = (data) => {
 };
 
 // 页面生命周期
+const resizeTrendChart = () => {
+  chartInstance?.resize();
+};
+
 onMounted(() => {
   fetchTrendData();
-  window.addEventListener('resize', () => chartInstance?.resize());
+  window.addEventListener('resize', resizeTrendChart);
 });
 onUnmounted(() => {
   if (chartInstance) chartInstance.dispose();
-  window.removeEventListener('resize', () => chartInstance?.resize());
+  window.removeEventListener('resize', resizeTrendChart);
 });
 </script>
 

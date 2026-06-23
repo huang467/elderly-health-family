@@ -278,7 +278,7 @@ export const createServiceOrder = async (orderData) => {
   
   if (savedElderlyList) {
     const elderlyList = JSON.parse(savedElderlyList);
-    const elderly = elderlyList.find(e => e.id === parseInt(orderData.elderlyId));
+    const elderly = elderlyList.find(e => String(e.id) === String(orderData.elderlyId));
     if (elderly) {
       elderlyName = elderly.name;
     }

@@ -3,6 +3,8 @@ import { ref, onMounted, onUnmounted } from 'vue'
 export function useAgentSpeech() {
   const isSpeaking = ref(false)
   const isListening = ref(false)
+  const isRecognitionSupported = ref(false)
+  const voiceError = ref('')
   const subtitle = ref("")
   
   let synth = null
@@ -14,11 +16,19 @@ export function useAgentSpeech() {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
       recognition = new SpeechRecognition()
+      isRecognitionSupported.value = true
       recognition.continuous = false
       recognition.interimResults = false
       recognition.lang = 'zh-CN'
-      recognition.onstart = () => { isListening.value = true }
+      recognition.onstart = () => {
+        voiceError.value = ''
+        isListening.value = true
+      }
       recognition.onend = () => { isListening.value = false }
+      recognition.onerror = (event) => {
+        isListening.value = false
+        voiceError.value = getRecognitionErrorText(event?.error)
+      }
     }
 
     // 监听 Store 发出的说话事件
@@ -75,8 +85,17 @@ export function useAgentSpeech() {
     } else {
       synth?.resume() // 唤醒可能沉睡的语音引擎
       if (recognition) {
-        recognition.onresult = (e) => onResult(e.results[0][0].transcript)
-        recognition.start()
+        recognition.onresult = (e) => {
+          voiceError.value = ''
+          onResult(e.results[0][0].transcript)
+        }
+        try {
+          recognition.start()
+        } catch (error) {
+          voiceError.value = '语音输入启动失败，请稍后再试。'
+        }
+      } else {
+        voiceError.value = '当前浏览器暂不支持语音输入，建议使用 Chrome 或 Edge。'
       }
     }
   }
@@ -86,5 +105,15 @@ export function useAgentSpeech() {
     subtitle.value = text
   }
 
-  return { isSpeaking, isListening, subtitle, updateSubtitleSilently, toggleMic }
+  return { isSpeaking, isListening, isRecognitionSupported, voiceError, subtitle, speak, updateSubtitleSilently, toggleMic }
+}
+
+const getRecognitionErrorText = (error) => {
+  const map = {
+    'not-allowed': '麦克风权限未开启，请允许浏览器使用麦克风。',
+    'audio-capture': '没有检测到可用麦克风。',
+    'no-speech': '没有听清楚，请再说一遍。',
+    network: '语音识别网络暂时不可用。'
+  }
+  return map[error] || '语音输入暂时不可用，请稍后再试。'
 }

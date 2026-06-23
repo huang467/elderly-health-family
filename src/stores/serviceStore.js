@@ -93,7 +93,7 @@ export const useServiceStore = defineStore('service', () => {
     const elderlyStore = useElderlyStore();
     const elderlyId = elderlyStore.currentElderlyId;
     if (!elderlyId) return [];
-    return list.value.filter(s => s.elderlyId === elderlyId);
+    return list.value.filter(s => String(s.elderlyId) === String(elderlyId));
   });
 
   /**
@@ -233,7 +233,7 @@ export const useServiceStore = defineStore('service', () => {
    * 获取指定老人的服务
    */
   const getByElderlyId = (elderlyId) => {
-    return list.value.filter(s => s.elderlyId === elderlyId);
+    return list.value.filter(s => String(s.elderlyId) === String(elderlyId));
   };
 
   /**
@@ -265,12 +265,12 @@ export const useServiceStore = defineStore('service', () => {
   /**
    * 加载初始数据
    */
-  const loadInitialData = () => {
+  const loadInitialData = (seedMock = true) => {
     // 先尝试从本地存储加载
     const hasSavedData = loadFromStorage();
 
     // 如果没有保存的数据，生成模拟数据
-    if (!hasSavedData || list.value.length === 0) {
+    if (seedMock && (!hasSavedData || list.value.length === 0)) {
       const elderlyStore = useElderlyStore();
       const elderlyId = elderlyStore.currentElderlyId;
       if (elderlyId && list.value.length === 0) {

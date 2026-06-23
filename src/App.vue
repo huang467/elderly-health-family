@@ -31,7 +31,9 @@ onMounted(() => {
 
   // 每隔 15 秒抓取一次体征并送给 AI 分析
   monitorInterval = setInterval(async () => {
-    const elderlyId = localStorage.getItem('current_elderly_id') || '1001';
+    const elderlyId = localStorage.getItem('current_elderly_id');
+    const isFamilyLogin = localStorage.getItem('family_login') === 'true';
+    if (!isFamilyLogin || !elderlyId) return;
 
     try {
       // 1. 抓取（模拟或真实）硬件数据

@@ -129,14 +129,61 @@
             {{ warningStore.unreadCount }}
           </span>
         </button>
+        <button class="action-btn danger" @click="router.push('/fall-detection')">
+          <IconSvg name="eye" :size="20" />
+          跌倒检测
+        </button>
         <button class="action-btn success" @click="router.push('/service')">
           <IconSvg name="calendar-plus" :size="20" />
           预约社区服务
         </button>
-        <button class="action-btn outline" @click="exportData">
-          <IconSvg name="download" :size="20" />
-          导出健康报告
+        <button class="action-btn outline" @click="router.push('/report')">
+          <IconSvg name="document-text" :size="20" />
+          AI 健康报告
         </button>
+      </section>
+
+      <!-- AI 自动预约 -->
+      <section class="auto-service-panel">
+        <div class="auto-service-header">
+          <div>
+            <h2 class="section-title">
+              <IconSvg name="stethoscope" :size="24" />
+              AI 异常自动预约
+            </h2>
+            <p>检测到心率、血氧或血压异常时，自动分析并预约合适的看病服务。</p>
+          </div>
+          <label class="auto-toggle">
+            <input type="checkbox" v-model="autoBooking.enabled" />
+            <span>{{ autoBooking.enabled ? '已开启' : '已关闭' }}</span>
+          </label>
+        </div>
+
+        <div class="auto-config-grid">
+          <label>
+            <span>API Key</span>
+            <input
+              v-model="autoBooking.apiKey"
+              type="password"
+              autocomplete="off"
+              placeholder="填入后由大模型决定服务类型"
+            />
+          </label>
+          <label>
+            <span>模型接口</span>
+            <input v-model="autoBooking.endpoint" autocomplete="off" />
+          </label>
+          <label>
+            <span>模型 ID</span>
+            <input v-model="autoBooking.model" autocomplete="off" />
+          </label>
+        </div>
+
+        <div class="auto-status-row" :class="autoBooking.statusLevel">
+          <IconSvg :name="autoBooking.running ? 'refresh-cw' : 'info'" :size="16" :spin="autoBooking.running" />
+          <span>{{ autoBooking.statusText }}</span>
+          <strong>{{ autoBookingApiReady ? '大模型判断' : '本地规则兜底' }}</strong>
+        </div>
       </section>
 
       <!-- 健康建议 -->
@@ -167,7 +214,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, nextTick, watch, reactive } from 'vue';
 import { useRouter } from 'vue-router';
 import * as echarts from 'echarts';
 import AppHeader from '../components/AppHeader.vue';
@@ -176,19 +223,38 @@ import BaseHealthCard from '../components/BaseHealthCard.vue';
 import { useElderlyStore } from '../stores/elderlyStore';
 import { useHealthStore } from '../stores/healthStore';
 import { useWarningStore } from '../stores/warningStore';
+import { useServiceStore } from '../stores/serviceStore';
 import { useUIStore } from '../stores/uiStore';
-import { getRealTimeHealth } from '../api/health';
+import { createServiceOrder, getRealTimeHealth } from '../api/health';
+import {
+  assessHealthAbnormal,
+  fallbackServiceRecommendation,
+  getAutoServiceLabel,
+  getSuggestedAppointmentSlot,
+  recommendServiceByModel
+} from '../utils/autoServiceBooking';
 
 const router = useRouter();
 const elderlyStore = useElderlyStore();
 const healthStore = useHealthStore();
 const warningStore = useWarningStore();
+const serviceStore = useServiceStore();
 const uiStore = useUIStore();
 
 const isLoading = ref(false);
 const refreshTimer = ref(null);
 const currentTrendTab = ref('heartRate');
 let chartInstance = null;
+
+const autoBooking = reactive({
+  enabled: true,
+  running: false,
+  apiKey: '',
+  endpoint: 'https://api.deepseek.com/chat/completions',
+  model: 'deepseek-chat',
+  statusText: '等待下一次健康数据刷新',
+  statusLevel: 'idle'
+});
 
 const trendTabs = [
   { key: 'heartRate', label: '心率' },
@@ -204,6 +270,10 @@ const deviceStatusClass = computed(() => {
 const deviceStatusText = computed(() => {
   return elderlyStore.currentElderly?.deviceStatus === 'online' ? '在线' : '离线';
 });
+
+const autoBookingApiReady = computed(() =>
+  autoBooking.apiKey.trim() && autoBooking.endpoint.trim() && autoBooking.model.trim()
+);
 
 const healthStatusIcon = computed(() => {
   const level = healthStore.healthStatus.level;
@@ -326,6 +396,7 @@ const refreshData = async () => {
     const data = await getRealTimeHealth(elderlyId);
     if (data) {
       healthStore.update(elderlyId, data);
+      await maybeAutoBookService(elderlyId, data);
       uiStore.showSuccess('数据刷新成功');
     }
   } catch (error) {
@@ -335,33 +406,100 @@ const refreshData = async () => {
   }
 };
 
-const exportData = () => {
-  const elderlyInfo = elderlyStore.currentElderly;
-  const healthData = healthStore.currentHealthData;
+const maybeAutoBookService = async (elderlyId, healthData) => {
+  if (!autoBooking.enabled || autoBooking.running) return;
 
-  let content = `老人健康数据报告\n`;
-  content += `====================\n\n`;
-  content += `姓名: ${elderlyInfo?.name || '老人'}\n`;
-  content += `年龄: ${elderlyInfo?.age || 70}岁\n`;
-  content += `报告时间: ${new Date().toLocaleString('zh-CN')}\n\n`;
-  content += `健康评分: ${healthStore.healthScore}分\n\n`;
-  content += `健康指标:\n`;
-  content += `- 心率: ${healthData.heartRate} bpm\n`;
-  content += `- 血压: ${healthData.bloodPressure} mmHg\n`;
-  content += `- 血氧: ${healthData.bloodOxygen}%\n`;
-  content += `- 体温: ${healthData.bodyTemperature}℃\n`;
-  content += `- 呼吸率: ${healthData.respirationRate} 次/分\n`;
-  content += `- 血糖: ${healthData.bloodGlucose} mmol/L\n`;
+  const assessment = assessHealthAbnormal(healthData);
+  if (!assessment.abnormal) {
+    autoBooking.statusText = '当前未检测到需要自动预约的健康异常';
+    autoBooking.statusLevel = 'normal';
+    return;
+  }
 
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `${elderlyInfo?.name || '老人'}_健康报告_${new Date().toISOString().split('T')[0]}.txt`;
-  link.click();
-  URL.revokeObjectURL(url);
+  serviceStore.loadInitialData(false);
+  if (hasPendingAutoBooking(elderlyId)) {
+    autoBooking.statusText = '已存在待确认的 AI 自动预约，本次异常不重复提交';
+    autoBooking.statusLevel = 'idle';
+    return;
+  }
 
-  uiStore.showSuccess('健康报告已导出');
+  autoBooking.running = true;
+  autoBooking.statusText = '检测到异常，正在分析适合的看病服务...';
+  autoBooking.statusLevel = 'warning';
+
+  try {
+    let recommendation;
+    let source = '大模型';
+
+    if (autoBookingApiReady.value) {
+      try {
+        recommendation = await recommendServiceByModel({
+          apiConfig: autoBooking,
+          elderlyName: elderlyStore.currentElderly?.name || '老人',
+          elderlyId,
+          healthData,
+          assessment
+        });
+      } catch (error) {
+        recommendation = fallbackServiceRecommendation(assessment, healthData);
+        source = '本地规则';
+      }
+    } else {
+      recommendation = fallbackServiceRecommendation(assessment, healthData);
+      source = '本地规则';
+    }
+
+    const slot = getSuggestedAppointmentSlot(recommendation.urgency);
+    const serviceLabel = getAutoServiceLabel(recommendation.serviceType);
+    const remark = `AI自动预约：${recommendation.reason} 异常指标：${assessment.issueText}`;
+    const contactPhone = localStorage.getItem('family_phone') || '';
+
+    const response = await createServiceOrder({
+      elderlyId,
+      serviceType: recommendation.serviceType,
+      serviceTime: slot.serviceDate,
+      servicePeriod: slot.serviceTime,
+      contactName: '家属',
+      contactPhone,
+      remark
+    });
+
+    serviceStore.add({
+      orderId: response.orderId,
+      serviceType: serviceLabel,
+      serviceDate: slot.serviceDate,
+      serviceTime: slot.serviceTime,
+      elderlyId,
+      contactName: '家属',
+      contactPhone,
+      status: response.status,
+      remark,
+      autoGenerated: true,
+      autoSource: source,
+      healthSnapshot: {
+        heartRate: healthData.heartRate,
+        bloodOxygen: healthData.bloodOxygen,
+        bloodPressure: healthData.bloodPressure
+      }
+    });
+
+    autoBooking.statusText = `已自动预约${serviceLabel}：${slot.serviceDate} ${slot.serviceTime}`;
+    autoBooking.statusLevel = 'success';
+    uiStore.showWarning(`检测到健康异常，已自动预约${serviceLabel}`, 'AI 自动预约');
+  } catch (error) {
+    autoBooking.statusText = '自动预约失败，请到服务预约页手动提交';
+    autoBooking.statusLevel = 'danger';
+  } finally {
+    autoBooking.running = false;
+  }
+};
+
+const hasPendingAutoBooking = (elderlyId) => {
+  return serviceStore.all.some(order =>
+    String(order.elderlyId) === String(elderlyId) &&
+    order.autoGenerated &&
+    order.status === '待确认（社区审核中）'
+  );
 };
 
 // 生成迷你图表数据
@@ -491,11 +629,15 @@ watch(currentTrendTab, () => {
   initMiniChart();
 });
 
+const resizeMiniChart = () => {
+  chartInstance?.resize();
+};
+
 onMounted(() => {
   refreshData();
   initMiniChart();
   refreshTimer.value = setInterval(refreshData, 30000);
-  window.addEventListener('resize', () => chartInstance?.resize());
+  window.addEventListener('resize', resizeMiniChart);
 });
 
 onUnmounted(() => {
@@ -504,7 +646,7 @@ onUnmounted(() => {
     chartInstance.dispose();
     chartInstance = null;
   }
-  window.removeEventListener('resize', () => chartInstance?.resize());
+  window.removeEventListener('resize', resizeMiniChart);
 });
 </script>
 
@@ -827,7 +969,7 @@ onUnmounted(() => {
 // 功能按钮
 .action-buttons {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 16px;
   margin-bottom: 24px;
 }
@@ -876,6 +1018,16 @@ onUnmounted(() => {
     }
   }
 
+  &.danger {
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    color: white;
+
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(220, 38, 38, 0.3);
+    }
+  }
+
   &.outline {
     background: white;
     border: 2px solid #e2e8f0;
@@ -903,6 +1055,119 @@ onUnmounted(() => {
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+}
+
+.auto-service-panel {
+  background: white;
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+  margin-bottom: 24px;
+}
+
+.auto-service-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+
+  p {
+    margin: 8px 0 0;
+    color: #64748b;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+}
+
+.auto-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+
+  input {
+    width: 16px;
+    height: 16px;
+    accent-color: #2563eb;
+  }
+}
+
+.auto-config-grid {
+  display: grid;
+  grid-template-columns: 0.9fr 1.35fr 0.75fr;
+  gap: 14px;
+  margin-bottom: 14px;
+
+  label {
+    display: grid;
+    gap: 7px;
+    color: #334155;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  input {
+    min-height: 40px;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 0 12px;
+    outline: none;
+
+    &:focus {
+      border-color: #2563eb;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+  }
+}
+
+.auto-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  color: #475569;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  font-size: 14px;
+
+  span {
+    flex: 1;
+  }
+
+  strong {
+    color: #0f172a;
+    font-size: 13px;
+  }
+
+  &.normal,
+  &.success {
+    color: #047857;
+    background: #ecfdf5;
+    border-color: #bbf7d0;
+  }
+
+  &.warning {
+    color: #b45309;
+    background: #fffbeb;
+    border-color: #fde68a;
+  }
+
+  &.danger {
+    color: #b91c1c;
+    background: #fef2f2;
+    border-color: #fecaca;
   }
 }
 
@@ -1000,6 +1265,10 @@ onUnmounted(() => {
   .action-buttons {
     grid-template-columns: repeat(2, 1fr);
   }
+
+  .auto-config-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 768px) {
@@ -1027,6 +1296,12 @@ onUnmounted(() => {
 
   .action-buttons {
     grid-template-columns: 1fr;
+  }
+
+  .auto-service-header,
+  .auto-status-row {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .trend-tabs {

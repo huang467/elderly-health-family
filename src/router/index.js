@@ -6,6 +6,8 @@ import FamilyHome from '../views/FamilyHome.vue';
 import HealthDashboard from '../views/HealthDashboard.vue';
 import HealthTrend from '../views/HealthTrend.vue';
 import HealthWarning from '../views/HealthWarning.vue';
+import FallDetection from '../views/FallDetection.vue';
+import HealthReport from '../views/HealthReport.vue';
 import ServiceBooking from '../views/ServiceBooking.vue';
 // 后台管理页面
 import AdminLogin from '../views/AdminLogin.vue';
@@ -31,6 +33,8 @@ const routes = [
   { path: '/dashboard', name: 'HealthDashboard', component: HealthDashboard, meta: { requiresFamilyAuth: true } },
   { path: '/trend', name: 'HealthTrend', component: HealthTrend, meta: { requiresFamilyAuth: true } },
   { path: '/warning', name: 'HealthWarning', component: HealthWarning, meta: { requiresFamilyAuth: true } },
+  { path: '/fall-detection', name: 'FallDetection', component: FallDetection, meta: { requiresFamilyAuth: true } },
+  { path: '/report', name: 'HealthReport', component: HealthReport, meta: { requiresFamilyAuth: true } },
   { path: '/service', name: 'ServiceBooking', component: ServiceBooking, meta: { requiresFamilyAuth: true } },
 
   // 后台管理（管理员端）
@@ -44,7 +48,7 @@ const routes = [
 
   // 老人端
   { path: '/elderly/login', name: 'ElderlyLogin', component: ElderlyLogin, meta: { title: '老人端登录' } },
-  { path: '/elderly/dashboard', name: 'ElderlyDashboard', component: ElderlyDashboard, meta: { title: '颐境感知 - 陪伴大屏' } }
+  { path: '/elderly/dashboard', name: 'ElderlyDashboard', component: ElderlyDashboard, meta: { title: '颐境感知 - 陪伴大屏', requiresElderlyAuth: true } }
 ];
 
 // 创建路由实例
@@ -57,6 +61,7 @@ const routerInstance = createRouter({
 routerInstance.beforeEach((to, from, next) => {
   const isFamilyLogin = localStorage.getItem('family_login') === 'true';
   const isAdminLogin = localStorage.getItem('admin_login') === 'true';
+  const isElderlyLogin = !!localStorage.getItem('elderly_token');
 
   if (to.meta.requiresFamilyAuth && !isFamilyLogin) {
     next({ path: '/login' });
@@ -65,6 +70,11 @@ routerInstance.beforeEach((to, from, next) => {
 
   if (to.meta.requiresAdminAuth && !isAdminLogin) {
     next({ path: '/admin/login' });
+    return;
+  }
+
+  if (to.meta.requiresElderlyAuth && !isElderlyLogin) {
+    next({ path: '/elderly/login' });
     return;
   }
 

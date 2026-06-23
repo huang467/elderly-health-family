@@ -50,7 +50,7 @@
             <div class="stat-label">待确认服务</div>
           </div>
         </div>
-        <div class="stat-card success" @click="router.push('/record')">
+        <div class="stat-card success" @click="router.push('/service')">
           <div class="stat-icon">
             <IconSvg name="check" :size="24" />
           </div>
@@ -182,6 +182,19 @@
             <div class="access-content">
               <h3>健康趋势</h3>
               <p>分析健康变化趋势图表</p>
+            </div>
+            <div class="access-arrow">
+              <IconSvg name="chevron-right" :size="20" />
+            </div>
+          </div>
+
+          <div class="access-card" @click="router.push('/report')">
+            <div class="access-icon teal">
+              <IconSvg name="document-text" :size="32" />
+            </div>
+            <div class="access-content">
+              <h3>AI 健康报告</h3>
+              <p>生成含趋势图片的健康分析</p>
             </div>
             <div class="access-arrow">
               <IconSvg name="chevron-right" :size="20" />
@@ -1157,6 +1170,11 @@ onUnmounted(() => {
   &.purple {
     background: linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%);
     color: #9333ea;
+  }
+
+  &.teal {
+    background: linear-gradient(135deg, #ccfbf1 0%, #99f6e4 100%);
+    color: #0f766e;
   }
 }
 

@@ -19,20 +19,22 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import IconSvg from './IconSvg.vue';
+import { useWarningStore } from '../stores/warningStore';
 
 const router = useRouter();
 const route = useRoute();
-
-const unhandledWarnings = ref(2);
+const warningStore = useWarningStore();
 
 const navItems = computed(() => [
   { name: '首页', path: '/home', icon: 'home' },
   { name: '数据总览', path: '/dashboard', icon: 'chart' },
   { name: '健康趋势', path: '/trend', icon: 'trend' },
-  { name: '预警记录', path: '/warning', icon: 'warning', badge: unhandledWarnings.value > 0 ? unhandledWarnings.value : null },
+  { name: '预警记录', path: '/warning', icon: 'warning', badge: warningStore.unreadCount > 0 ? warningStore.unreadCount : null },
+  { name: '跌倒检测', path: '/fall-detection', icon: 'eye' },
+  { name: '健康报告', path: '/report', icon: 'document-text' },
   { name: '服务预约', path: '/service', icon: 'calendar' },
 ]);
 

@@ -48,7 +48,7 @@ export const useElderlyStore = defineStore('elderly', () => {
     try {
       localStorage.setItem('elderlyList', JSON.stringify(list.value));
       if (current.value) {
-        localStorage.setItem('current_elderly_id', current.value.id);
+        localStorage.setItem('current_elderly_id', current.value.id || current.value.elderlyId);
         localStorage.setItem('current_elderly_name', current.value.name);
         localStorage.setItem('current_elderly_info', JSON.stringify(current.value));
       }
@@ -104,7 +104,7 @@ export const useElderlyStore = defineStore('elderly', () => {
     if (index !== -1) {
       list.value[index] = { ...list.value[index], ...data };
       // 如果更新的是当前老人，同步更新
-      if (current.value?.id === id) {
+      if (String(current.value?.id) === String(id)) {
         current.value = { ...current.value, ...data };
       }
       saveToStorage();
@@ -119,7 +119,7 @@ export const useElderlyStore = defineStore('elderly', () => {
   const remove = (id) => {
     if (!id) return;
     list.value = list.value.filter(e => e.id !== id && e.id !== String(id));
-    if (current.value?.id === id) {
+    if (String(current.value?.id) === String(id)) {
       current.value = null;
       localStorage.removeItem('current_elderly_id');
       localStorage.removeItem('current_elderly_name');

@@ -193,7 +193,7 @@ export const refreshToken = async () => {
  * 测试账号：手机号 13800001111，密码 123456
  */
 export const elderlyLogin = async (data) => {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     // 模拟半秒钟的网络请求延迟
     setTimeout(() => {
       // 写死测试账号：手机号 13800001111，密码 123456

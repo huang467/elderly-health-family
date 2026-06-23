@@ -61,7 +61,7 @@ class WebSocketManager {
 export const useAgentStore = defineStore('agent', {
   state: () => ({
     status: 'disconnected',
-    config: { url: "127.0.0.1:18789", token: "ad6097aef9655b9e64489c37b90adfde41c82a33df56d332" },
+    config: { url: "127.0.0.1:18789", token: "" },
     messages: [],
     emotion: 'neutral', // 暴露给全局的当前情绪
     isThinking: false,

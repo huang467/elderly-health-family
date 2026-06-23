@@ -71,7 +71,7 @@ export const useWarningStore = defineStore('warning', () => {
     const elderlyStore = useElderlyStore();
     const elderlyId = elderlyStore.currentElderlyId;
     if (!elderlyId) return [];
-    return list.value.filter(w => w.elderlyId === elderlyId);
+    return list.value.filter(w => String(w.elderlyId) === String(elderlyId));
   });
 
   /**
@@ -86,6 +86,27 @@ export const useWarningStore = defineStore('warning', () => {
    * 添加预警
    */
   const add = (warning) => {
+    const recentDuplicate = list.value.find(item =>
+      String(item.elderlyId) === String(warning.elderlyId) &&
+      item.type === warning.type &&
+      item.status === '未处理' &&
+      Date.now() - new Date(item.createdAt || item.time).getTime() < 5 * 60 * 1000
+    );
+
+    if (recentDuplicate) {
+      recentDuplicate.desc = warning.desc || recentDuplicate.desc;
+      recentDuplicate.level = warning.level || recentDuplicate.level;
+      recentDuplicate.snapshotUrl = warning.snapshotUrl || recentDuplicate.snapshotUrl;
+      recentDuplicate.transmittedAt = warning.transmittedAt || recentDuplicate.transmittedAt;
+      recentDuplicate.details = warning.details
+        ? { ...(recentDuplicate.details || {}), ...warning.details }
+        : recentDuplicate.details;
+      recentDuplicate.time = new Date().toLocaleString('zh-CN');
+      recentDuplicate.createdAt = new Date().toISOString();
+      saveToStorage();
+      return recentDuplicate;
+    }
+
     const newWarning = {
       ...warning,
       id: warning.id || `W${Date.now()}`,
@@ -182,7 +203,7 @@ export const useWarningStore = defineStore('warning', () => {
    * 获取指定老人的预警
    */
   const getByElderlyId = (elderlyId) => {
-    return list.value.filter(w => w.elderlyId === elderlyId);
+    return list.value.filter(w => String(w.elderlyId) === String(elderlyId));
   };
 
   /**

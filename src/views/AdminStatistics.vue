@@ -183,7 +183,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import * as echarts from 'echarts';
 import IconSvg from '../components/IconSvg.vue';
@@ -201,6 +201,7 @@ let warningTrendChartInstance = null;
 let serviceDistributionChartInstance = null;
 let healthStatusChartInstance = null;
 let systemActivityChartInstance = null;
+let chartInitTimer = null;
 
 // 统计数据
 const totalElderly = ref(128);
@@ -222,12 +223,28 @@ const completionRate = ref(92.3);
 
 // 生命周期：组件挂载后初始化图表
 onMounted(() => {
-  setTimeout(() => {
+  chartInitTimer = setTimeout(() => {
     initWarningTrendChart();
     initServiceDistributionChart();
     initHealthStatusChart();
     initSystemActivityChart();
   }, 100);
+  window.addEventListener('resize', resizeAdminStatisticsCharts);
+});
+
+onUnmounted(() => {
+  if (chartInitTimer) clearTimeout(chartInitTimer);
+  window.removeEventListener('resize', resizeAdminStatisticsCharts);
+  [
+    warningTrendChartInstance,
+    serviceDistributionChartInstance,
+    healthStatusChartInstance,
+    systemActivityChartInstance
+  ].forEach(chart => chart?.dispose());
+  warningTrendChartInstance = null;
+  serviceDistributionChartInstance = null;
+  healthStatusChartInstance = null;
+  systemActivityChartInstance = null;
 });
 
 // 监听日期范围变化
@@ -467,21 +484,12 @@ const updateCharts = () => {
   updateSystemActivityChart();
 };
 
-// 监听窗口大小变化，调整图表大小
-window.addEventListener('resize', () => {
-  if (warningTrendChartInstance) {
-    warningTrendChartInstance.resize();
-  }
-  if (serviceDistributionChartInstance) {
-    serviceDistributionChartInstance.resize();
-  }
-  if (healthStatusChartInstance) {
-    healthStatusChartInstance.resize();
-  }
-  if (systemActivityChartInstance) {
-    systemActivityChartInstance.resize();
-  }
-});
+const resizeAdminStatisticsCharts = () => {
+  warningTrendChartInstance?.resize();
+  serviceDistributionChartInstance?.resize();
+  healthStatusChartInstance?.resize();
+  systemActivityChartInstance?.resize();
+};
 </script>
 
 <style scoped lang="scss">

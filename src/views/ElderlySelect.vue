@@ -59,8 +59,10 @@ import AppHeader from '../components/AppHeader.vue';
 import ElderlyInfoCard from '../components/ElderlyInfoCard.vue';
 import IconSvg from '../components/IconSvg.vue';
 import { useElderlyList } from '../composables/useElderlyList';
+import { useElderlyStore } from '../stores/elderlyStore';
 
 const router = useRouter();
+const elderlyStore = useElderlyStore();
 
 // 使用老人列表管理 composable
 const { elderlyList, isLoading, errorMessage, fetchElderlyList } = useElderlyList();
@@ -75,6 +77,7 @@ const selectElderly = (elderly) => {
     localStorage.setItem('current_elderly_id', elderly.id);
     localStorage.setItem('current_elderly_name', elderly.name);
     localStorage.setItem('current_elderly_info', JSON.stringify(elderly));
+    elderlyStore.setCurrent(elderly);
 
     // 跳转到首页
     router.push('/home');

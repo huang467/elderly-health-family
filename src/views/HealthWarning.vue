@@ -70,6 +70,8 @@
               <option value="体温异常">体温异常</option>
               <option value="呼吸率异常">呼吸率异常</option>
               <option value="血糖异常">血糖异常</option>
+              <option value="跌倒检测">跌倒检测</option>
+              <option value="隐私区域跌倒检测">隐私区域跌倒检测</option>
             </select>
           </div>
           <div class="filter-item">
@@ -137,6 +139,14 @@
               </div>
 
               <p class="warning-desc">{{ item.desc }}</p>
+
+              <div class="warning-evidence" v-if="item.snapshotUrl">
+                <img :src="item.snapshotUrl" alt="跌倒瞬间影像" />
+                <div>
+                  <strong>跌倒瞬间影像</strong>
+                  <span>边缘端于 {{ item.transmittedAt || item.time }} 上传</span>
+                </div>
+              </div>
 
               <div class="detail-tags" v-if="item.details">
                 <div class="detail-tag" v-for="(detail, key) in item.details" :key="key">
@@ -212,6 +222,18 @@
             <div class="detail-row">
               <span class="detail-label">预警描述</span>
               <span class="detail-value">{{ selectedWarning.desc }}</span>
+            </div>
+            <div class="detail-row evidence-detail-row" v-if="selectedWarning.snapshotUrl">
+              <span class="detail-label">事件影像</span>
+              <div class="detail-value">
+                <div class="detail-evidence">
+                  <img :src="selectedWarning.snapshotUrl" alt="跌倒瞬间影像" />
+                  <div>
+                    <strong>跌倒瞬间关键帧</strong>
+                    <span>{{ selectedWarning.transmittedAt || selectedWarning.time }} · 边缘端上传</span>
+                  </div>
+                </div>
+              </div>
             </div>
             <div class="detail-row" v-if="selectedWarning.details">
               <span class="detail-label">详细数据</span>
@@ -340,7 +362,7 @@ const fetchWarningList = async () => {
 };
 
 const generateMockWarnings = () => {
-  const types = ['血压异常', '心率偏高', '心率偏低', '血氧偏低', '体温异常', '呼吸率异常', '血糖异常'];
+  const types = ['血压异常', '心率偏高', '心率偏低', '血氧偏低', '体温异常', '呼吸率异常', '血糖异常', '跌倒检测', '隐私区域跌倒检测'];
   const levels = ['high', 'medium', 'low'];
   const result = [];
 
@@ -383,6 +405,8 @@ const getRandomValue = (type) => {
     case '体温异常': return `${(Math.random() * 1.5 + 37.5).toFixed(1)}℃`;
     case '呼吸率异常': return `${Math.floor(Math.random() * 10) + 21}次/分`;
     case '血糖异常': return `${(Math.random() * 2 + 7).toFixed(1)}mmol/L`;
+    case '跌倒检测': return '疑似跌倒，置信度96%';
+    case '隐私区域跌倒检测': return '浴室疑似跌倒，置信度94%';
     default: return '异常值';
   }
 };
@@ -396,6 +420,8 @@ const getNormalRange = (type) => {
     case '体温异常': return '36.0-37.3℃';
     case '呼吸率异常': return '12-20次/分';
     case '血糖异常': return '3.9-6.1mmol/L';
+    case '跌倒检测': return '未检测到跌倒';
+    case '隐私区域跌倒检测': return '未检测到跌倒';
     default: return '正常范围';
   }
 };
@@ -826,6 +852,38 @@ onMounted(() => fetchWarningList());
   line-height: 1.6;
 }
 
+.warning-evidence {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 10px;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.78);
+
+  img {
+    width: 132px;
+    height: 84px;
+    border-radius: 9px;
+    object-fit: cover;
+    background: #111827;
+    flex-shrink: 0;
+  }
+
+  strong {
+    display: block;
+    color: #991b1b;
+    font-size: 14px;
+    margin-bottom: 4px;
+  }
+
+  span {
+    color: #64748b;
+    font-size: 12px;
+  }
+}
+
 .detail-tags {
   display: flex;
   flex-wrap: wrap;
@@ -1057,6 +1115,41 @@ onMounted(() => fetchWarningList());
   gap: 6px;
 }
 
+.evidence-detail-row {
+  align-items: flex-start;
+}
+
+.detail-evidence {
+  overflow: hidden;
+  border: 1px solid #fecaca;
+  border-radius: 14px;
+  background: #fff7f7;
+
+  img {
+    width: 100%;
+    max-height: 260px;
+    object-fit: cover;
+    display: block;
+    background: #111827;
+  }
+
+  div {
+    padding: 12px 14px;
+  }
+
+  strong {
+    display: block;
+    color: #991b1b;
+    font-size: 15px;
+    margin-bottom: 4px;
+  }
+
+  span {
+    color: #64748b;
+    font-size: 12px;
+  }
+}
+
 .data-item {
   display: flex;
   gap: 8px;
@@ -1178,6 +1271,16 @@ onMounted(() => fetchWarningList());
   .warning-card {
     flex-direction: column;
     gap: 12px;
+  }
+
+  .warning-evidence {
+    flex-direction: column;
+    align-items: flex-start;
+
+    img {
+      width: 100%;
+      height: 180px;
+    }
   }
 
   .card-header {

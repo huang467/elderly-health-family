@@ -169,7 +169,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import * as echarts from 'echarts';
 import IconSvg from '../components/IconSvg.vue';
@@ -191,6 +191,7 @@ const heartRateChart = ref(null);
 const bloodPressureChart = ref(null);
 let heartRateChartInstance = null;
 let bloodPressureChartInstance = null;
+let chartInitTimer = null;
 
 // 计算属性：过滤后的健康数据
 const filteredHealthData = computed(() => {
@@ -241,18 +242,27 @@ const avgSteps = computed(() => {
   return Math.round(sum / healthDataList.value.length);
 });
 
-// 生命周期：组件挂载时获取数据
 onMounted(() => {
   fetchElderlyList();
   fetchHealthData();
-});
-
-// 生命周期：组件挂载后初始化图表
-onMounted(() => {
-  setTimeout(() => {
+  chartInitTimer = setTimeout(() => {
     initHeartRateChart();
     initBloodPressureChart();
   }, 100);
+  window.addEventListener('resize', resizeAdminHealthCharts);
+});
+
+onUnmounted(() => {
+  if (chartInitTimer) clearTimeout(chartInitTimer);
+  window.removeEventListener('resize', resizeAdminHealthCharts);
+  if (heartRateChartInstance) {
+    heartRateChartInstance.dispose();
+    heartRateChartInstance = null;
+  }
+  if (bloodPressureChartInstance) {
+    bloodPressureChartInstance.dispose();
+    bloodPressureChartInstance = null;
+  }
 });
 
 // 监听图表时间范围变化
@@ -475,15 +485,10 @@ const updateCharts = () => {
   updateBloodPressureChart();
 };
 
-// 监听窗口大小变化，调整图表大小
-window.addEventListener('resize', () => {
-  if (heartRateChartInstance) {
-    heartRateChartInstance.resize();
-  }
-  if (bloodPressureChartInstance) {
-    bloodPressureChartInstance.resize();
-  }
-});
+const resizeAdminHealthCharts = () => {
+  heartRateChartInstance?.resize();
+  bloodPressureChartInstance?.resize();
+};
 </script>
 
 <style scoped lang="scss">
