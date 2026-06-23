@@ -60,7 +60,18 @@
       <div class="chat-box">
         <div class="chat-header">
           <h3>陪伴对话</h3>
-          <span>{{ runtimeStatus }}</span>
+          <div class="chat-tools">
+            <span>{{ runtimeStatus }}</span>
+            <button
+              class="clear-chat-btn"
+              @click="clearMessages"
+              :disabled="messages.length === 0"
+              title="清空对话"
+            >
+              <IconSvg name="trash" :size="15" />
+              清空
+            </button>
+          </div>
         </div>
 
         <div ref="messageListRef" class="message-list">
@@ -70,7 +81,14 @@
             class="message"
             :class="message.role"
           >
-            {{ message.content }}
+            <span class="message-content">{{ message.content }}</span>
+            <button
+              class="message-delete-btn"
+              @click="removeMessage(message.id)"
+              title="删除这条"
+            >
+              <IconSvg name="trash" :size="13" />
+            </button>
           </div>
           <div v-if="thinking" class="message assistant thinking">正在思考...</div>
         </div>
@@ -586,6 +604,15 @@ const addMessage = (role, content) => {
   }
 
   scrollMessages()
+}
+
+const removeMessage = (id) => {
+  messages.value = messages.value.filter(message => message.id !== id)
+}
+
+const clearMessages = () => {
+  messages.value = []
+  window.speechSynthesis?.cancel()
 }
 
 const addAssistantReply = (content) => {
@@ -1144,6 +1171,25 @@ select:focus {
   font-size: 13px;
 }
 
+.chat-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.clear-chat-btn {
+  min-height: 30px;
+  border-radius: 9px;
+  background: rgba(51, 65, 85, 0.9);
+  color: #dbeafe;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+
 .message-list {
   min-height: 0;
   overflow-y: auto;
@@ -1159,6 +1205,10 @@ select:focus {
   border-radius: 16px;
   line-height: 1.55;
   font-size: 14px;
+  position: relative;
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
 }
 
 .message.user {
@@ -1177,6 +1227,30 @@ select:focus {
 
 .message.thinking {
   color: #bfdbfe;
+}
+
+.message-content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.message-delete-btn {
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.18);
+  color: currentColor;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  opacity: 0.35;
+}
+
+.message:hover .message-delete-btn,
+.message-delete-btn:focus-visible {
+  opacity: 1;
 }
 
 .input-row,
