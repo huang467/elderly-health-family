@@ -201,7 +201,7 @@ const emotionMap = {
   disgusted: '不适'
 }
 
-const textEmotionHoldMs = 6000
+const textEmotionHoldMs = 2000
 
 const emotionTextOptions = [
   { value: 'neutral', label: 'Neutral', aliases: ['neutral', 'calm', 'normal', 'pingjing', 'putong', '\u5e73\u9759', '\u666e\u901a', '\u6b63\u5e38'] },
@@ -328,8 +328,8 @@ const detectExpression = async () => {
   try {
     const result = await faceapi
       .detectSingleFace(videoRef.value, new faceapi.TinyFaceDetectorOptions({
-        inputSize: 224,
-        scoreThreshold: 0.25
+        inputSize: 320,
+        scoreThreshold: 0.18
       }))
       .withFaceExpressions()
 
@@ -412,7 +412,7 @@ const updateEmotion = (expressions) => {
   const expressiveConfidence = Math.min(0.99, expressionScores[expressiveDominant])
   const neutralScore = expressionScores.neutral || 0
 
-  if (expressiveConfidence > 0.07 || expressiveConfidence > neutralScore * 0.32) {
+  if (expressiveConfidence > 0.045 || expressiveConfidence > neutralScore * 0.24) {
     emotion.value = expressiveDominant
     emotionConfidence.value = expressiveConfidence
   } else if (neutralScore > 0.26) {
