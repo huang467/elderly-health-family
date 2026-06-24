@@ -678,11 +678,12 @@ const generateImage = async () => {
       })
     })
 
+    const data = await response.json()
+
     if (!response.ok) {
-      throw new Error(`image api failed: ${response.status}`)
+      throw new Error(data.error || `image api failed: ${response.status}`)
     }
 
-    const data = await response.json()
     const url = data.url
     const b64 = data.b64_json
 
@@ -694,7 +695,7 @@ const generateImage = async () => {
       throw new Error('empty image response')
     }
   } catch (error) {
-    imageError.value = 'Image generation failed. Check Cloudflare OPENAI_API_KEY or image model.'
+    imageError.value = error?.message || 'Image generation failed. Check Cloudflare OPENAI_API_KEY or image model.'
   } finally {
     imageGenerating.value = false
   }
