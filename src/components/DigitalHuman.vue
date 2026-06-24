@@ -114,6 +114,57 @@
         </div>
       </div>
 
+      <div class="image-panel">
+        <div class="image-header">
+          <h3>Image API</h3>
+          <span>{{ imageGenerating ? 'Generating' : imageApiReady ? 'Ready' : 'Need config' }}</span>
+        </div>
+
+        <div class="image-config-grid">
+          <label>
+            <span>Image Key</span>
+            <input v-model="imageConfig.apiKey" type="password" autocomplete="off" placeholder="sk-..." />
+          </label>
+          <label>
+            <span>Image endpoint</span>
+            <input v-model="imageConfig.endpoint" autocomplete="off" placeholder="OpenAI-compatible image generations URL" />
+          </label>
+          <label>
+            <span>Image model</span>
+            <input v-model="imageConfig.model" autocomplete="off" placeholder="gpt-image-1 or provider model" />
+          </label>
+          <label>
+            <span>Size</span>
+            <select v-model="imageConfig.size">
+              <option value="1024x1024">1024x1024</option>
+              <option value="1024x1536">1024x1536</option>
+              <option value="1536x1024">1536x1024</option>
+              <option value="512x512">512x512</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="image-prompt-row">
+          <input
+            v-model="imagePrompt"
+            @keyup.enter="generateImage"
+            placeholder="Describe the image you want to generate"
+          />
+          <button class="primary-btn" @click="generateImage" :disabled="imageGenerating">
+            <IconSvg name="plus" :size="16" />
+            {{ imageGenerating ? 'Generating' : 'Generate' }}
+          </button>
+        </div>
+
+        <div v-if="imageError" class="image-error">{{ imageError }}</div>
+        <div v-if="generatedImage" class="image-result">
+          <img :src="generatedImage" :alt="imagePrompt || 'Generated image'" />
+          <button class="delete-btn" @click="clearGeneratedImage" title="Clear image">
+            <IconSvg name="trash" :size="16" />
+          </button>
+        </div>
+      </div>
+
       <div class="task-panel">
         <div class="task-header">
           <h3>定时任务</h3>
@@ -162,11 +213,15 @@ const speech = useAgentSpeech()
 const initialized = ref(false)
 const booting = ref(false)
 const thinking = ref(false)
+const imageGenerating = ref(false)
 const cameraError = ref('')
 const cameraStatus = ref('waiting')
 const emotion = ref('neutral')
 const emotionConfidence = ref(0)
 const inputText = ref('')
+const imagePrompt = ref('')
+const generatedImage = ref('')
+const imageError = ref('')
 const videoRef = ref(null)
 const messageListRef = ref(null)
 let mediaStream = null
@@ -193,6 +248,13 @@ const apiConfig = reactive({
   apiKey: '',
   endpoint: 'https://api.openai.com/v1/chat/completions',
   model: ''
+})
+
+const imageConfig = reactive({
+  apiKey: '',
+  endpoint: 'https://api.openai.com/v1/images/generations',
+  model: 'gpt-image-1',
+  size: '1024x1024'
 })
 
 const messages = ref([
@@ -267,6 +329,7 @@ const sensitiveEmotionWeight = {
 }
 
 const apiReady = computed(() => apiConfig.apiKey.trim() && apiConfig.endpoint.trim() && apiConfig.model.trim())
+const imageApiReady = computed(() => imageConfig.apiKey.trim() && imageConfig.endpoint.trim() && imageConfig.model.trim())
 const activeTasks = computed(() => tasks.value.filter(task => !task.done))
 const runtimeStatus = computed(() => thinking.value ? '模型响应中' : speech.isListening.value ? '语音输入中' : '待命')
 const cameraStatusText = computed(() => {
@@ -585,6 +648,62 @@ const callModel = async (text, options = {}) => {
   return content.trim()
 }
 
+const generateImage = async () => {
+  const prompt = imagePrompt.value.trim()
+  if (!prompt || imageGenerating.value) return
+
+  if (!imageApiReady.value) {
+    imageError.value = 'Please fill Image Key, endpoint, and model.'
+    return
+  }
+
+  imageGenerating.value = true
+  imageError.value = ''
+  generatedImage.value = ''
+
+  try {
+    const response = await fetch(imageConfig.endpoint.trim(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${imageConfig.apiKey.trim()}`
+      },
+      body: JSON.stringify({
+        model: imageConfig.model.trim(),
+        prompt,
+        size: imageConfig.size,
+        n: 1
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error(`image api failed: ${response.status}`)
+    }
+
+    const data = await response.json()
+    const image = data.data?.[0]
+    const url = image?.url || data.url || data.output?.[0]?.url
+    const b64 = image?.b64_json || data.b64_json || data.output?.[0]?.b64_json
+
+    if (url) {
+      generatedImage.value = url
+    } else if (b64) {
+      generatedImage.value = `data:image/png;base64,${b64}`
+    } else {
+      throw new Error('empty image response')
+    }
+  } catch (error) {
+    imageError.value = 'Image generation failed. Check key, endpoint, model, or provider CORS support.'
+  } finally {
+    imageGenerating.value = false
+  }
+}
+
+const clearGeneratedImage = () => {
+  generatedImage.value = ''
+  imageError.value = ''
+}
+
 const toggleVoice = () => {
   speech.toggleMic((text) => {
     inputText.value = text
@@ -848,6 +967,7 @@ onBeforeUnmount(() => {
 .avatar-panel,
 .control-panel,
 .chat-box,
+.image-panel,
 .task-panel {
   border: 1px solid rgba(148, 163, 184, 0.24);
   background: rgba(15, 23, 42, 0.72);
@@ -868,7 +988,7 @@ onBeforeUnmount(() => {
   border-radius: 22px;
   padding: 20px;
   display: grid;
-  grid-template-rows: auto minmax(330px, 1fr) auto;
+  grid-template-rows: auto minmax(260px, 1fr) auto auto;
   gap: 16px;
   min-width: 0;
 }
@@ -1138,6 +1258,7 @@ select:focus {
 }
 
 .chat-box,
+.image-panel,
 .task-panel {
   border-radius: 18px;
   padding: 16px;
@@ -1151,6 +1272,7 @@ select:focus {
 }
 
 .chat-header,
+.image-header,
 .task-header {
   display: flex;
   justify-content: space-between;
@@ -1160,12 +1282,14 @@ select:focus {
 }
 
 .chat-header h3,
+.image-header h3,
 .task-header h3 {
   margin: 0;
   font-size: 18px;
 }
 
 .chat-header span,
+.image-header span,
 .task-header span {
   color: #93c5fd;
   font-size: 13px;
@@ -1336,6 +1460,51 @@ button:disabled {
   color: #fecaca;
 }
 
+.image-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.image-config-grid {
+  display: grid;
+  grid-template-columns: 0.8fr 1.3fr 0.8fr 0.7fr;
+  gap: 10px;
+}
+
+.image-prompt-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+}
+
+.image-error {
+  color: #fecaca;
+  font-size: 13px;
+}
+
+.image-result {
+  position: relative;
+  width: min(100%, 260px);
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: #020617;
+}
+
+.image-result img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.image-result .delete-btn {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+}
+
 .delete-btn {
   width: 38px;
   min-height: 38px;
@@ -1390,7 +1559,7 @@ button:disabled {
   }
 
   .control-panel {
-    min-height: 720px;
+    min-height: 900px;
   }
 }
 
@@ -1400,6 +1569,8 @@ button:disabled {
   }
 
   .config-grid,
+  .image-config-grid,
+  .image-prompt-row,
   .task-form,
   .input-row {
     grid-template-columns: 1fr;
