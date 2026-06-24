@@ -67,6 +67,12 @@
             :class="message.role"
           >
             <span class="message-content">{{ message.content }}</span>
+            <img
+              v-if="message.imageUrl"
+              class="message-image"
+              :src="message.imageUrl"
+              :alt="message.content || 'Generated image'"
+            />
             <button
               class="message-delete-btn"
               @click="removeMessage(message.id)"
@@ -75,7 +81,9 @@
               <IconSvg name="trash" :size="13" />
             </button>
           </div>
-          <div v-if="thinking" class="message assistant thinking">正在思考...</div>
+          <div v-if="thinking || imageGenerating" class="message assistant thinking">
+            {{ imageGenerating ? '正在生成图片...' : '正在思考...' }}
+          </div>
         </div>
 
         <div class="input-row">
@@ -89,57 +97,14 @@
             <IconSvg name="wind" :size="18" />
             <span>{{ voiceButtonText }}</span>
           </button>
-          <input v-model="inputText" @keyup.enter="sendMessage" placeholder="输入想说的话，也可以说“过五分钟叫我吃饭”" />
-          <button class="send-btn" @click="sendMessage" :disabled="thinking">
+          <input v-model="inputText" @keyup.enter="sendMessage" placeholder="输入想说的话，也可以说“画一张老人吃饭”" />
+          <button class="send-btn" @click="sendMessage" :disabled="thinking || imageGenerating">
             <IconSvg name="arrow-right" :size="18" />
             发送
           </button>
         </div>
         <div class="voice-status" :class="{ active: speech.isListening.value, error: speech.voiceError.value }">
           {{ voiceStatusText }}
-        </div>
-      </div>
-
-      <div class="image-panel">
-        <div class="image-header">
-          <h3>Image API</h3>
-          <span>{{ imageGenerating ? 'Generating' : 'Server proxy' }}</span>
-        </div>
-
-        <div class="image-config-grid">
-          <label>
-            <span>Image model</span>
-            <input v-model="imageConfig.model" autocomplete="off" placeholder="gpt-image-1 or provider model" />
-          </label>
-          <label>
-            <span>Size</span>
-            <select v-model="imageConfig.size">
-              <option value="1024x1024">1024x1024</option>
-              <option value="1024x1536">1024x1536</option>
-              <option value="1536x1024">1536x1024</option>
-              <option value="512x512">512x512</option>
-            </select>
-          </label>
-        </div>
-
-        <div class="image-prompt-row">
-          <input
-            v-model="imagePrompt"
-            @keyup.enter="generateImage"
-            placeholder="Describe the image you want to generate"
-          />
-          <button class="primary-btn" @click="generateImage" :disabled="imageGenerating">
-            <IconSvg name="plus" :size="16" />
-            {{ imageGenerating ? 'Generating' : 'Generate' }}
-          </button>
-        </div>
-
-        <div v-if="imageError" class="image-error">{{ imageError }}</div>
-        <div v-if="generatedImage" class="image-result">
-          <img :src="generatedImage" :alt="imagePrompt || 'Generated image'" />
-          <button class="delete-btn" @click="clearGeneratedImage" title="Clear image">
-            <IconSvg name="trash" :size="16" />
-          </button>
         </div>
       </div>
 
@@ -200,9 +165,6 @@ const cameraStatus = ref('waiting')
 const emotion = ref('neutral')
 const emotionConfidence = ref(0)
 const inputText = ref('')
-const imagePrompt = ref('')
-const generatedImage = ref('')
-const imageError = ref('')
 const videoRef = ref(null)
 const messageListRef = ref(null)
 let mediaStream = null
@@ -484,6 +446,39 @@ const applyTextEmotionSignal = (text) => {
   return { matched: true, explicit: !!explicitEmotion, emotion: inferredEmotion }
 }
 
+const parseImageIntent = (text) => {
+  const raw = text.trim()
+  const normalized = raw.toLowerCase().replace(/\s+/g, ' ').trim()
+  const prefixes = [
+    '帮我画',
+    '帮我生成',
+    '生成图片',
+    '生成一张',
+    '生成一个',
+    '生成图',
+    '生成',
+    '画一张',
+    '画一个',
+    '画一下',
+    '做一张图',
+    '出一张图',
+    'generate image',
+    'create image',
+    'image',
+    'draw',
+    '画'
+  ]
+
+  const matchedPrefix = prefixes.find(prefix =>
+    normalized === prefix || normalized.startsWith(prefix)
+  )
+
+  if (!matchedPrefix) return ''
+
+  const prompt = raw.slice(matchedPrefix.length).replace(/^[:：,，\s]+/, '').trim()
+  return prompt || raw
+}
+
 const updateEmotion = (expressions) => {
   Object.keys(expressionScores).forEach(key => {
     const rawScore = expressions[key] || 0
@@ -562,10 +557,16 @@ const maybeTriggerProactiveCare = async (currentEmotion, confidence, now) => {
 
 const sendMessage = async () => {
   const text = inputText.value.trim()
-  if (!text || thinking.value) return
+  if (!text || thinking.value || imageGenerating.value) return
 
   inputText.value = ''
   addMessage('user', text)
+
+  const imagePromptText = parseImageIntent(text)
+  if (imagePromptText) {
+    await generateImage(imagePromptText)
+    return
+  }
 
   const textEmotionSignal = applyTextEmotionSignal(text)
   if (textEmotionSignal.explicit) {
@@ -658,13 +659,10 @@ const callModel = async (text, options = {}) => {
   return content.trim()
 }
 
-const generateImage = async () => {
-  const prompt = imagePrompt.value.trim()
+const generateImage = async (prompt) => {
   if (!prompt || imageGenerating.value) return
 
   imageGenerating.value = true
-  imageError.value = ''
-  generatedImage.value = ''
 
   try {
     const response = await fetch('/api/generate-image', {
@@ -687,24 +685,18 @@ const generateImage = async () => {
 
     const url = data.url
     const b64 = data.b64_json
+    const imageUrl = url || (b64 ? `data:image/png;base64,${b64}` : '')
 
-    if (url) {
-      generatedImage.value = url
-    } else if (b64) {
-      generatedImage.value = `data:image/png;base64,${b64}`
-    } else {
+    if (!imageUrl) {
       throw new Error('empty image response')
     }
+
+    addMessage('assistant', `已生成图片：${prompt}`, { imageUrl })
   } catch (error) {
-    imageError.value = error?.message || 'Image generation failed. Check Cloudflare OPENAI_API_KEY or image model.'
+    addMessage('assistant', error?.message || '图片生成失败，请检查 OpenAI Key、额度或图片模型。')
   } finally {
     imageGenerating.value = false
   }
-}
-
-const clearGeneratedImage = () => {
-  generatedImage.value = ''
-  imageError.value = ''
 }
 
 const toggleVoice = () => {
@@ -805,11 +797,12 @@ const getSupportedAudioMimeType = () => {
   return candidates.find(type => MediaRecorder.isTypeSupported(type)) || ''
 }
 
-const addMessage = (role, content) => {
+const addMessage = (role, content, extra = {}) => {
   messages.value.push({
     id: `msg_${Date.now()}_${Math.random().toString(16).slice(2)}`,
     role,
-    content
+    content,
+    ...extra
   })
 
   if (messages.value.length > 80) {
@@ -1064,7 +1057,6 @@ onBeforeUnmount(() => {
 .avatar-panel,
 .control-panel,
 .chat-box,
-.image-panel,
 .task-panel {
   border: 1px solid rgba(148, 163, 184, 0.24);
   background: rgba(15, 23, 42, 0.72);
@@ -1085,7 +1077,7 @@ onBeforeUnmount(() => {
   border-radius: 22px;
   padding: 20px;
   display: grid;
-  grid-template-rows: minmax(320px, 1fr) auto auto;
+  grid-template-rows: minmax(420px, 1fr) auto;
   gap: 16px;
   min-width: 0;
 }
@@ -1349,7 +1341,6 @@ select:focus {
 }
 
 .chat-box,
-.image-panel,
 .task-panel {
   border-radius: 18px;
   padding: 16px;
@@ -1363,7 +1354,6 @@ select:focus {
 }
 
 .chat-header,
-.image-header,
 .task-header {
   display: flex;
   justify-content: space-between;
@@ -1373,14 +1363,12 @@ select:focus {
 }
 
 .chat-header h3,
-.image-header h3,
 .task-header h3 {
   margin: 0;
   font-size: 18px;
 }
 
 .chat-header span,
-.image-header span,
 .task-header span {
   color: #93c5fd;
   font-size: 13px;
@@ -1422,6 +1410,7 @@ select:focus {
   font-size: 14px;
   position: relative;
   display: inline-flex;
+  flex-direction: column;
   align-items: flex-start;
   gap: 8px;
 }
@@ -1447,6 +1436,14 @@ select:focus {
 .message-content {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.message-image {
+  width: min(100%, 280px);
+  aspect-ratio: 1;
+  border-radius: 12px;
+  object-fit: cover;
+  display: block;
 }
 
 .message-delete-btn {
@@ -1551,51 +1548,6 @@ button:disabled {
   color: #fecaca;
 }
 
-.image-panel {
-  display: grid;
-  gap: 12px;
-}
-
-.image-config-grid {
-  display: grid;
-  grid-template-columns: 1fr 0.7fr;
-  gap: 10px;
-}
-
-.image-prompt-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 10px;
-}
-
-.image-error {
-  color: #fecaca;
-  font-size: 13px;
-}
-
-.image-result {
-  position: relative;
-  width: min(100%, 260px);
-  aspect-ratio: 1;
-  overflow: hidden;
-  border-radius: 14px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  background: #020617;
-}
-
-.image-result img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.image-result .delete-btn {
-  position: absolute;
-  right: 8px;
-  top: 8px;
-}
-
 .delete-btn {
   width: 38px;
   min-height: 38px;
@@ -1659,8 +1611,6 @@ button:disabled {
     padding: 14px;
   }
 
-  .image-config-grid,
-  .image-prompt-row,
   .task-form,
   .input-row {
     grid-template-columns: 1fr;
