@@ -5,8 +5,8 @@
         <span class="state-pill" :class="{ active: initialized }">
           {{ initialized ? '已唤醒' : '待唤醒' }}
         </span>
-        <span class="state-pill" :class="{ active: apiReady }">
-          {{ apiReady ? '模型就绪' : '等待密钥' }}
+        <span class="state-pill active">
+          模型代理
         </span>
       </div>
 
@@ -45,7 +45,7 @@
       <div class="config-grid">
         <label>
           <span>API Key</span>
-          <input v-model="apiConfig.apiKey" type="password" autocomplete="off" placeholder="在这里输入密钥，本页不会保存" />
+          <input v-model="apiConfig.apiKey" type="password" autocomplete="off" placeholder="可选：留空则走服务器代理" />
         </label>
         <label>
           <span>模型接口</span>
@@ -248,7 +248,7 @@ const emotionSamples = []
 
 const apiConfig = reactive({
   apiKey: '',
-  endpoint: 'https://api.openai.com/v1/chat/completions',
+  endpoint: '',
   model: ''
 })
 
@@ -329,6 +329,7 @@ const sensitiveEmotionWeight = {
 }
 
 const apiReady = computed(() => apiConfig.apiKey.trim() && apiConfig.endpoint.trim() && apiConfig.model.trim())
+const useDirectChatApi = computed(() => apiReady.value)
 const activeTasks = computed(() => tasks.value.filter(task => !task.done))
 const runtimeStatus = computed(() => thinking.value ? '模型响应中' : speech.isListening.value ? '语音输入中' : '待命')
 const isVoiceActive = computed(() => voiceRecording.value || voiceTranscribing.value || speech.isListening.value)
@@ -566,7 +567,7 @@ const maybeTriggerProactiveCare = async (currentEmotion, confidence, now) => {
 
   try {
     thinking.value = true
-    const reply = apiReady.value
+    const reply = useDirectChatApi.value
       ? await callModel(prompt, { hidden: true })
       : getLocalCareReply(currentEmotion)
     addAssistantReply(reply)
@@ -599,11 +600,6 @@ const sendMessage = async () => {
     return
   }
 
-  if (!apiReady.value) {
-    addAssistantReply('请先输入 API Key、模型接口和模型 ID。')
-    return
-  }
-
   thinking.value = true
   try {
     const reply = await callModel(text)
@@ -624,6 +620,40 @@ const callModel = async (text, options = {}) => {
       content: message.content
     }))
 
+  const requestMessages = [
+    {
+      role: 'system',
+      content: `你是老人端陪伴数字人。请用温和、简短、可靠的中文回答。用户当前表情是：${emotionMap[emotion.value] || emotion.value}。如果用户表达身体不适或紧急情况，建议联系家属或医生。`
+    },
+    ...recentMessages,
+    {
+      role: 'user',
+      content: options.hidden ? text : text
+    }
+  ]
+
+  if (!useDirectChatApi.value) {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        messages: requestMessages,
+        temperature: 0.7
+      })
+    })
+    const data = await response.json().catch(() => ({}))
+
+    if (!response.ok) {
+      throw new Error(data.error || `model api failed: ${response.status}`)
+    }
+
+    const content = data.content || data.output_text || data.message
+    if (!content) throw new Error('empty model response')
+    return content.trim()
+  }
+
   const response = await fetch(apiConfig.endpoint.trim(), {
     method: 'POST',
     headers: {
@@ -632,17 +662,7 @@ const callModel = async (text, options = {}) => {
     },
     body: JSON.stringify({
       model: apiConfig.model.trim(),
-      messages: [
-        {
-          role: 'system',
-          content: `你是老人端陪伴数字人。请用温和、简短、可靠的中文回答。用户当前表情是：${emotionMap[emotion.value] || emotion.value}。如果用户表达身体不适或紧急情况，建议联系家属或医生。`
-        },
-        ...recentMessages,
-        {
-          role: 'user',
-          content: options.hidden ? text : text
-        }
-      ],
+      messages: requestMessages,
       temperature: 0.7
     })
   })
