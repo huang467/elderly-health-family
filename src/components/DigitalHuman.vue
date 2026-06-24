@@ -57,6 +57,10 @@
         </label>
       </div>
 
+      <div class="speech-proxy-row">
+        <span>Speech input uses server transcription. No user API key is required.</span>
+      </div>
+
       <div class="chat-box">
         <div class="chat-header">
           <h3>陪伴对话</h3>
@@ -97,11 +101,12 @@
           <button
             class="voice-btn"
             @click="toggleVoice"
-            :class="{ active: speech.isListening.value }"
+            :class="{ active: isVoiceActive }"
             :title="voiceStatusText"
+            :disabled="voiceTranscribing"
           >
             <IconSvg name="wind" :size="18" />
-            <span>{{ speech.isListening.value ? '正在听' : '语音输入' }}</span>
+            <span>{{ voiceButtonText }}</span>
           </button>
           <input v-model="inputText" @keyup.enter="sendMessage" placeholder="输入想说的话，也可以说“过五分钟叫我吃饭”" />
           <button class="send-btn" @click="sendMessage" :disabled="thinking">
@@ -214,6 +219,9 @@ const initialized = ref(false)
 const booting = ref(false)
 const thinking = ref(false)
 const imageGenerating = ref(false)
+const voiceRecording = ref(false)
+const voiceTranscribing = ref(false)
+const speechProxyError = ref('')
 const cameraError = ref('')
 const cameraStatus = ref('waiting')
 const emotion = ref('neutral')
@@ -233,6 +241,8 @@ let sustainedEmotion = 'neutral'
 let sustainedEmotionStartedAt = 0
 let sustainedEmotionTriggered = false
 let textEmotionHoldUntil = 0
+let voiceRecorder = null
+let voiceChunks = []
 const expressionScores = reactive({
   neutral: 0,
   happy: 0,
@@ -332,6 +342,13 @@ const apiReady = computed(() => apiConfig.apiKey.trim() && apiConfig.endpoint.tr
 const imageApiReady = computed(() => imageConfig.apiKey.trim() && imageConfig.endpoint.trim() && imageConfig.model.trim())
 const activeTasks = computed(() => tasks.value.filter(task => !task.done))
 const runtimeStatus = computed(() => thinking.value ? '模型响应中' : speech.isListening.value ? '语音输入中' : '待命')
+const isVoiceActive = computed(() => voiceRecording.value || voiceTranscribing.value || speech.isListening.value)
+const voiceButtonText = computed(() => {
+  if (voiceTranscribing.value) return '识别中'
+  if (voiceRecording.value) return '停止录音'
+  if (speech.isListening.value) return '正在听'
+  return '语音输入'
+})
 const cameraStatusText = computed(() => {
   if (cameraStatus.value === 'detecting') return emotionMap[emotion.value] || emotion.value
   if (cameraStatus.value === 'no-face') return '未检测到人脸'
@@ -339,6 +356,9 @@ const cameraStatusText = computed(() => {
   return '等待识别'
 })
 const voiceStatusText = computed(() => {
+  if (speechProxyError.value) return speechProxyError.value
+  if (voiceTranscribing.value) return '正在识别语音，请稍等。'
+  if (voiceRecording.value) return '正在录音，再点一次语音输入会停止并识别。'
   if (speech.voiceError.value) return speech.voiceError.value
   if (speech.isListening.value) return '正在听您说话，说完后会自动发送。'
   if (!speech.isRecognitionSupported.value) return '可点击语音输入；若浏览器不支持，请使用 Chrome 或 Edge。'
@@ -705,10 +725,101 @@ const clearGeneratedImage = () => {
 }
 
 const toggleVoice = () => {
+  if (voiceTranscribing.value) return
+
+  if (voiceRecording.value) {
+    stopServerVoiceRecording()
+    return
+  }
+
+  if (navigator.mediaDevices?.getUserMedia && window.MediaRecorder) {
+    startServerVoiceRecording()
+    return
+  }
+
   speech.toggleMic((text) => {
     inputText.value = text
     sendMessage()
   })
+}
+
+const startServerVoiceRecording = async () => {
+  speechProxyError.value = ''
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    voiceChunks = []
+    voiceRecorder = new MediaRecorder(stream, { mimeType: getSupportedAudioMimeType() })
+
+    voiceRecorder.ondataavailable = (event) => {
+      if (event.data?.size) {
+        voiceChunks.push(event.data)
+      }
+    }
+
+    voiceRecorder.onstop = () => {
+      stream.getTracks().forEach(track => track.stop())
+      transcribeVoiceRecording()
+    }
+
+    voiceRecorder.start()
+    voiceRecording.value = true
+  } catch (error) {
+    speechProxyError.value = '麦克风权限未开启，或当前浏览器无法录音。'
+  }
+}
+
+const stopServerVoiceRecording = () => {
+  if (!voiceRecorder || voiceRecorder.state === 'inactive') return
+  voiceRecording.value = false
+  voiceRecorder.stop()
+}
+
+const transcribeVoiceRecording = async () => {
+  if (!voiceChunks.length) {
+    speechProxyError.value = '没有录到声音，请再试一次。'
+    return
+  }
+
+  voiceTranscribing.value = true
+  speechProxyError.value = ''
+
+  try {
+    const mimeType = voiceChunks[0]?.type || 'audio/webm'
+    const audioBlob = new Blob(voiceChunks, { type: mimeType })
+    const formData = new FormData()
+    formData.append('audio', audioBlob, `speech.${mimeType.includes('mp4') ? 'mp4' : 'webm'}`)
+    formData.append('language', 'zh')
+
+    const response = await fetch('/api/transcribe', {
+      method: 'POST',
+      body: formData
+    })
+    const data = await response.json().catch(() => ({}))
+
+    if (!response.ok || !data.text) {
+      throw new Error(data.error || 'empty transcription')
+    }
+
+    inputText.value = data.text.trim()
+    sendMessage()
+  } catch (error) {
+    speechProxyError.value = '服务器语音识别不可用，请确认 Cloudflare 已配置 OPENAI_API_KEY。'
+  } finally {
+    voiceChunks = []
+    voiceRecorder = null
+    voiceTranscribing.value = false
+  }
+}
+
+const getSupportedAudioMimeType = () => {
+  const candidates = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/mp4'
+  ]
+
+  return candidates.find(type => MediaRecorder.isTypeSupported(type)) || ''
 }
 
 const addMessage = (role, content) => {
@@ -946,6 +1057,9 @@ const cameraErrorText = (error) => {
 
 onBeforeUnmount(() => {
   stopCamera()
+  if (voiceRecorder && voiceRecorder.state !== 'inactive') {
+    voiceRecorder.stop()
+  }
   if (schedulerTimer) {
     clearInterval(schedulerTimer)
     schedulerTimer = null
@@ -1230,6 +1344,19 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: 0.9fr 1.4fr 0.8fr;
   gap: 12px;
+}
+
+.speech-proxy-row {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid rgba(56, 189, 248, 0.24);
+  border-radius: 12px;
+  background: rgba(14, 116, 144, 0.18);
+  color: #bae6fd;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 label {
