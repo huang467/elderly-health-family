@@ -42,25 +42,6 @@
     </section>
 
     <section class="control-panel">
-      <div class="config-grid">
-        <label>
-          <span>API Key</span>
-          <input v-model="apiConfig.apiKey" type="password" autocomplete="off" placeholder="可选：留空则走服务器代理" />
-        </label>
-        <label>
-          <span>模型接口</span>
-          <input v-model="apiConfig.endpoint" autocomplete="off" placeholder="OpenAI 兼容 chat completions 地址" />
-        </label>
-        <label>
-          <span>模型 ID</span>
-          <input v-model="apiConfig.model" autocomplete="off" placeholder="例如 gpt-4o-mini 或你的模型名" />
-        </label>
-      </div>
-
-      <div class="speech-proxy-row">
-        <span>Speech input uses server transcription. No user API key is required.</span>
-      </div>
-
       <div class="chat-box">
         <div class="chat-header">
           <h3>陪伴对话</h3>
@@ -1104,7 +1085,7 @@ onBeforeUnmount(() => {
   border-radius: 22px;
   padding: 20px;
   display: grid;
-  grid-template-rows: auto minmax(260px, 1fr) auto auto;
+  grid-template-rows: minmax(320px, 1fr) auto auto;
   gap: 16px;
   min-width: 0;
 }
@@ -1340,25 +1321,6 @@ onBeforeUnmount(() => {
   top: 8px;
   bottom: auto;
   color: #fecaca;
-}
-
-.config-grid {
-  display: grid;
-  grid-template-columns: 0.9fr 1.4fr 0.8fr;
-  gap: 12px;
-}
-
-.speech-proxy-row {
-  min-height: 34px;
-  display: flex;
-  align-items: center;
-  padding: 8px 12px;
-  border: 1px solid rgba(56, 189, 248, 0.24);
-  border-radius: 12px;
-  background: rgba(14, 116, 144, 0.18);
-  color: #bae6fd;
-  font-size: 13px;
-  font-weight: 700;
 }
 
 label {
@@ -1697,7 +1659,6 @@ button:disabled {
     padding: 14px;
   }
 
-  .config-grid,
   .image-config-grid,
   .image-prompt-row,
   .task-form,
