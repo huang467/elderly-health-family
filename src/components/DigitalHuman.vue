@@ -122,18 +122,10 @@
       <div class="image-panel">
         <div class="image-header">
           <h3>Image API</h3>
-          <span>{{ imageGenerating ? 'Generating' : imageApiReady ? 'Ready' : 'Need config' }}</span>
+          <span>{{ imageGenerating ? 'Generating' : 'Server proxy' }}</span>
         </div>
 
         <div class="image-config-grid">
-          <label>
-            <span>Image Key</span>
-            <input v-model="imageConfig.apiKey" type="password" autocomplete="off" placeholder="sk-..." />
-          </label>
-          <label>
-            <span>Image endpoint</span>
-            <input v-model="imageConfig.endpoint" autocomplete="off" placeholder="OpenAI-compatible image generations URL" />
-          </label>
           <label>
             <span>Image model</span>
             <input v-model="imageConfig.model" autocomplete="off" placeholder="gpt-image-1 or provider model" />
@@ -261,8 +253,6 @@ const apiConfig = reactive({
 })
 
 const imageConfig = reactive({
-  apiKey: '',
-  endpoint: 'https://api.openai.com/v1/images/generations',
   model: 'gpt-image-1',
   size: '1024x1024'
 })
@@ -339,7 +329,6 @@ const sensitiveEmotionWeight = {
 }
 
 const apiReady = computed(() => apiConfig.apiKey.trim() && apiConfig.endpoint.trim() && apiConfig.model.trim())
-const imageApiReady = computed(() => imageConfig.apiKey.trim() && imageConfig.endpoint.trim() && imageConfig.model.trim())
 const activeTasks = computed(() => tasks.value.filter(task => !task.done))
 const runtimeStatus = computed(() => thinking.value ? '模型响应中' : speech.isListening.value ? '语音输入中' : '待命')
 const isVoiceActive = computed(() => voiceRecording.value || voiceTranscribing.value || speech.isListening.value)
@@ -672,27 +661,20 @@ const generateImage = async () => {
   const prompt = imagePrompt.value.trim()
   if (!prompt || imageGenerating.value) return
 
-  if (!imageApiReady.value) {
-    imageError.value = 'Please fill Image Key, endpoint, and model.'
-    return
-  }
-
   imageGenerating.value = true
   imageError.value = ''
   generatedImage.value = ''
 
   try {
-    const response = await fetch(imageConfig.endpoint.trim(), {
+    const response = await fetch('/api/generate-image', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${imageConfig.apiKey.trim()}`
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         model: imageConfig.model.trim(),
         prompt,
-        size: imageConfig.size,
-        n: 1
+        size: imageConfig.size
       })
     })
 
@@ -701,9 +683,8 @@ const generateImage = async () => {
     }
 
     const data = await response.json()
-    const image = data.data?.[0]
-    const url = image?.url || data.url || data.output?.[0]?.url
-    const b64 = image?.b64_json || data.b64_json || data.output?.[0]?.b64_json
+    const url = data.url
+    const b64 = data.b64_json
 
     if (url) {
       generatedImage.value = url
@@ -713,7 +694,7 @@ const generateImage = async () => {
       throw new Error('empty image response')
     }
   } catch (error) {
-    imageError.value = 'Image generation failed. Check key, endpoint, model, or provider CORS support.'
+    imageError.value = 'Image generation failed. Check Cloudflare OPENAI_API_KEY or image model.'
   } finally {
     imageGenerating.value = false
   }
@@ -1594,7 +1575,7 @@ button:disabled {
 
 .image-config-grid {
   display: grid;
-  grid-template-columns: 0.8fr 1.3fr 0.8fr 0.7fr;
+  grid-template-columns: 1fr 0.7fr;
   gap: 10px;
 }
 
